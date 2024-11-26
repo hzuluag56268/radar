@@ -34,11 +34,11 @@ ROUTES = {
     },
     "HOLDING": {
         "coordinates": [
-            (7.806278934049598, -72.50548625473371),
             (7.889099999999999, -72.49670000000002),
             (7.8943199144148855, -72.54686802298092),
             (7.811498848464485, -72.55565427771462),
-            (7.806278934049598, -72.50548625473371)
+            (7.806278934049598, -72.50548625473371),
+            (7.889099999999999, -72.49670000000002)
         ],
         "color": (255, 255, 255),
         "type": "holding"
@@ -74,38 +74,75 @@ class ui():
         self.font = pygame.font.Font(None, 30)
         self.left = 0 
         self.top = 0
-        self.menu_options =  ["Join Holding Pattern", "Finish Holding Pattern", "Stop descent at", "disregard"]
+        self.menu_options =  ["Join Holding Pattern", "Finish Holding Pattern", "Stop descent at","Continue descent to", "disregard"]
         self.cols = 1
         self.rows = len(self.menu_options)
         self.option_height = 25
         self.show_menu = False
         self.acft = None
+        self.level_window_active = False
+        self.string_level = ""
+        self.update_level = False
+        self.is_continue_descent = False
     def get_input(self, text_rect,i):
+
         if  text_rect.collidepoint(pygame.mouse.get_pos()) and pygame.mouse.get_pressed()[0]:
             if self.menu_options[i] == "Join Holding Pattern":
+                self.show_menu = False
                 self.acft.pending_holding_pattern = True
             if self.menu_options[i] == "Finish Holding Pattern":
                 self.acft.finish_holding_pattern = True
+                self.show_menu = False
             if self.menu_options[i] == "Stop descent at":
-                pass
-            print(f"Selected {self.menu_options[i]}")
-            
-            self.show_menu = False
+                self.show_menu = False
+                self.level_window_active = True
+                self.string_level = ""     
+            if self.menu_options[i] == "Continue descent to":
+                self.level_window_active = True
+                self.show_menu = False
+                self.string_level = ""     
+                self.is_continue_descent = True
+    def show_level(self):
         
+        if self.level_window_active: 
+            rect2 = pygame.Rect(0, 0 , 400,25)
+            pygame.draw.rect(self.display_surface, (0, 255, 0),rect2, 0, 4) 
+            pygame.draw.rect(self.display_surface, (255, 255, 255),rect2, 4, 4)
+
+            text_surf2 = self.font.render(f"level: {self.string_level}", True, (255, 255, 100))        
+            text_rect2 = text_surf2.get_rect(center = (rect2.centerx,rect2.centery))
+            self.display_surface.blit(text_surf2, text_rect2)
+        
+    def update(self):
+        if self.update_level:
+             if self.is_continue_descent:
+                self.acft.start_altitude = self.acft.altitude
+                self.acft.cumulative_distance_to_last_descent = \
+                    self.acft.partial_cumulative_distance_travelled + self.acft.cumulative_segment_distance
+                self.is_continue_descent = False
+                print(f"start altitude updated to {self.acft.start_altitude}")
+
+             self.acft.desired_altitude = int(self.string_level)
+             self.update_level = False
+            
+             print("level updated to ", self.acft.desired_altitude)
+       
     def draw(self):
+        if self.level_window_active:
+            self.show_level()
         # bg
         if not self.show_menu:
             return
         # Dynamic placement (ensure label stays within the screen bounds)
-        while self.left + 10 + self.cols * 400 > self.display_surface.get_width():
-            self.left -= 50
-        while self.top + 10 + self.rows * self.option_height > self.display_surface.get_height():
-            self.top -= 50
+        if self.left + 10 + self.cols * 400 > self.display_surface.get_width():
+            self.left -= 10 + self.cols * 400
+        if self.top + 10 + self.rows * self.option_height > self.display_surface.get_height():
+            self.top -= 10 + self.rows * self.option_height
         rect = pygame.Rect(self.left + 10, self.top + 10 ,self.cols * 400, self.rows * self.option_height)
         pygame.draw.rect(self.display_surface, (0, 255, 0),rect, 0, 4)
         pygame.draw.rect(self.display_surface, (255, 255, 255),rect, 4, 4)
 
-        
+        # Draw menu options
         for col in range(self.cols):
             for row in range(self.rows):
                 x = rect.left + rect.width / (self.cols * 2) + (rect.width / self.cols) * col
@@ -118,20 +155,22 @@ class ui():
                 text_rect = text_surf.get_rect(center = (x,y))
                 self.display_surface.blit(text_surf, text_rect)
                 self.get_input(text_rect,i) 
-    
+        
 class Aircraft(pygame.sprite.Sprite):
-    def __init__(self, groups, color, start_pos, label, screen, ui):  # Added `label` parameter
+    def __init__(self, groups, color, route_name, speed,label, screen, ui):  # Added `label` parameter
         super().__init__(groups)
-        self.route = "STAR"
+        self.route_name = route_name
+        self.start_pos = ROUTES[self.route_name]["pixel_points"][0]
         self.radius = 8
         self.color = color
         self.label = label  # Added to store a unique identifier for the aircraft
         self.creation_time = time.time()
         self.start_segment_time = time.time()
-        self.speed = 10800
+        self.speed = speed
         self.cumulative_distance_to_last_descent = 0
         self.partial_cumulative_distance_travelled = 0
         self.cumulative_distance_travelled = 0
+        self.cumulative_segment_distance = 0
         self.current_segment = 0
         self.current_segment_distance_nm = 0
         self.ui = ui
@@ -140,8 +179,8 @@ class Aircraft(pygame.sprite.Sprite):
         self.desired_altitude = 6000
         self.image = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
         pygame.draw.circle(self.image, self.color, (self.radius, self.radius), self.radius)
-        self.rect = self.image.get_rect(center=start_pos)
-        self.moving_point = ROUTES[self.route]["pixel_points"][0]
+        self.rect = self.image.get_rect(center= self.start_pos)
+        self.moving_point = ROUTES[self.route_name]["pixel_points"][0]
         self.descent_rate = 333  # feet per nautical mile
         self.in_holding_pattern = False
         self.pending_holding_pattern = False
@@ -170,7 +209,7 @@ class Aircraft(pygame.sprite.Sprite):
             f"ID: {self.label}",             # Aircraft identifier
             f"ALT: {self.altitude:.0f} ft",  # Current altitude
             f"SPEED: {self.speed} kts",      # Aircraft speed
-            f"SEGMENT: {self.current_segment}"  # Current route segment
+            
         ]
 
         # Render each line of text
@@ -186,6 +225,7 @@ class Aircraft(pygame.sprite.Sprite):
         rect_x = self.rect.centerx + 15  # Adjust placement based on aircraft position
         rect_y = self.rect.centery - rect_height // 2
 
+        
         # Dynamic placement (ensure label stays within the screen bounds)
         if rect_x + rect_width > screen.get_width():
             rect_x = self.rect.centerx - rect_width - 15  # Move to the left if overflowing right
@@ -193,6 +233,8 @@ class Aircraft(pygame.sprite.Sprite):
             rect_y = 0  # Move down if overflowing top
         if rect_y + rect_height > screen.get_height():
             rect_y = screen.get_height() - rect_height  # Move up if overflowing bottom
+        
+        # Draw the rectangle background
 
         # Draw the rounded rectangle background
         pygame.draw.rect(
@@ -233,6 +275,7 @@ class Aircraft(pygame.sprite.Sprite):
     def acft_clicked(self):    
         if self.ui.show_menu:
             return
+        
         if pygame.mouse.get_pressed()[0]:
             pos = pygame.mouse.get_pos()
             if self.rect.collidepoint(pos):
@@ -241,23 +284,21 @@ class Aircraft(pygame.sprite.Sprite):
                 self.ui.show_menu = True
                 self.ui.acft = self   
                          
-    def get_input(self):
-        
-        pass
+    
     def update(self):
         #self.get_input()
         
-        p1, p2 = ROUTES[self.route]["pixel_points"][self.current_segment], \
-                 ROUTES[self.route]["pixel_points"][self.current_segment + 1]
-        self.current_segment_distance_nm = ROUTES[self.route]["distances"][self.current_segment]
+        p1, p2 = ROUTES[self.route_name]["pixel_points"][self.current_segment], \
+                 ROUTES[self.route_name]["pixel_points"][self.current_segment + 1]
+        self.current_segment_distance_nm = ROUTES[self.route_name]["distances"][self.current_segment]
         time_required_sec = (self.current_segment_distance_nm / self.speed) * 3600
         segment_elapsed = time.time() - self.start_segment_time
         t = min(segment_elapsed / time_required_sec, 1)
         self.moving_point = self.interpolate(p1, p2, t)
         self.rect.center = self.moving_point
-        cumulative_segment_distance = t * self.current_segment_distance_nm
+        self.cumulative_segment_distance = t * self.current_segment_distance_nm
         self.cumulative_distance_travelled = \
-            (self.partial_cumulative_distance_travelled + cumulative_segment_distance) - \
+            (self.partial_cumulative_distance_travelled + self.cumulative_segment_distance) - \
             self.cumulative_distance_to_last_descent
         self.altitude = \
             self.calculate_altitude(self.cumulative_distance_travelled, self.start_altitude, self.desired_altitude)
@@ -266,13 +307,13 @@ class Aircraft(pygame.sprite.Sprite):
             self.partial_cumulative_distance_travelled += self.current_segment_distance_nm
             self.current_segment += 1
             self.start_segment_time = time.time()
-            if self.current_segment >= len(ROUTES[self.route]["pixel_points"]) - 1:
+            if self.current_segment >= len(ROUTES[self.route_name]["pixel_points"]) - 1:
                 if self.in_holding_pattern and self.finish_holding_pattern:
                     self.kill()
                 elif not self.in_holding_pattern and self.pending_holding_pattern:
                     self.in_holding_pattern = True
                     self.current_segment = 0
-                    self.route = "HOLDING"
+                    self.route_name = "HOLDING"
                 elif not self.in_holding_pattern and not self.pending_holding_pattern:
                     self.kill()
                 elif self.in_holding_pattern:
@@ -302,12 +343,22 @@ class Game:
         self.clock = pygame.time.Clock()
         self.font = pygame.font.Font(None, 24)  # Added font for aircraft labels
         self.running = True
+        
+        self.elapsed_time = 0
         self.all_sprites = pygame.sprite.Group()
-        start_pos = ROUTES["UMPEX1A"]["pixel_points"][0]
+        start_pos = ROUTES["STAR"]["pixel_points"][0]
         self.ui = ui()
-        Aircraft(self.all_sprites, (0, 100, 0), start_pos, "Aircraft-1",self.screen,self.ui)  # Added unique label for the aircraft
+        self.level_str = ""
+        self.Aircraft = Aircraft
+        self.aircraft_timers = [{'name':'UMPEX1A', 'time':0, 'speed':2000, 'label':'AVA1364'},
+                                {'name':'STAR', 'time':0, 'speed':2000, 'label':'ava1364'},] 
+        
+        
+        
+        
         #Aircraft(self.all_sprites, (0, 100, 0), start_pos, "Aircraft-2",self.screen,self.ui)  # Added unique label for the aircraft
 
+        
         
 
     def run(self):
@@ -315,19 +366,38 @@ class Game:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
+                if event.type == pygame.KEYDOWN:
+                    
+                    if self.ui.level_window_active:
+                        
+                        if event.key == pygame.K_RETURN:  # Confirm input
+                            print("key return pressed")
+                            self.ui.level_window_active = False
+                            self.ui.update_level = True
+                        elif event.key == pygame.K_BACKSPACE:  # Remove last character
+                            self.ui.string_level = self.ui.string_level[:-1]
+                        elif event.unicode.isdigit():  # Add digit to input
+                            self.ui.string_level += event.unicode
 
+               
+            
+            for acft in self.aircraft_timers[:]:
+                if self.elapsed_time >= acft['time']:
+                    self.Aircraft(self.all_sprites, (0, 100, 0),acft['name'],acft['speed'] ,\
+                                  acft['label'],self.screen,self.ui)
+                    self.aircraft_timers.remove(acft)
+            
+            #Aircraft(self.all_sprites, (0, 100, 0), 'STAR', 10500,"AVA1364",self.screen,self.ui)  # Added unique label for the aircraft
             self.screen.fill((0, 0, 0))
             for route_name, route_data in ROUTES.items():
                 for i in range(len(route_data["pixel_points"]) - 1):
                     pygame.draw.line(self.screen, route_data["color"], route_data["pixel_points"][i], route_data["pixel_points"][i + 1], 2)
 
             self.all_sprites.update()
+            
             self.all_sprites.draw(self.screen)
 
-            """ # Draw aircraft labels
-            for sprite in self.all_sprites:
-                if isinstance(sprite, Aircraft):
-                    sprite.draw_label(self.screen, self.font)  # Added call to draw the label for each aircraft """
+            self.ui.update()
             self.ui.draw()
             pygame.display.update()
 
