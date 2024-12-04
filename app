@@ -6,9 +6,9 @@ from pyproj import Geod
 pygame.init()
 
 # Constants
-SCREEN_WIDTH, SCREEN_HEIGHT = 580, 700
+SCREEN_WIDTH, SCREEN_HEIGHT = 650, 700
 LAT_MIN, LAT_MAX = 7.3, 8.61
-LON_MIN, LON_MAX = -73.05, -72.35
+LON_MIN, LON_MAX = -73.08, -72.35
 
 
 ROUTES = {
@@ -22,6 +22,15 @@ ROUTES = {
             (7.688498493040899, -72.5853160745551),   # R19715
             (7.683044633232183, -72.56402326501416),  # R19215
             (7.678956241583512, -72.5379607296289),   # R18615
+            (7.92742, -72.51161)                      # R18600
+        ],
+        "color": (255, 255, 255),
+        "altitude": 17000,
+        "type": "star"
+    },
+    "ESNUT2A": {
+        "coordinates": [
+            (7.541572011416707, -72.80482542913134),  # R21729
             (7.92742, -72.51161)                      # R18600
         ],
         "color": (255, 255, 255),
@@ -88,7 +97,7 @@ ROUTES = {
         "altitude": 1000,
         "type": "sid"
     },
-    "ESNUT32B": {
+    "TORART1B": {
         "coordinates": [
     (7.92742, -72.51161),                      # A15800
     (7.881091620686754, -72.49271381459073),  # A15803
@@ -105,7 +114,16 @@ ROUTES = {
 ,
         "altitude": 17000,  # Altitude at 17,000 feet
         "color": (255, 255, 255),  # White for visualization
-        "type": "star"  # Indicates this is a STAR
+        "type": ""  # Indicates this is a STAR
+    },
+    "DIMIL_star": {
+        "coordinates": [
+            (8.490154856842048, -73.06140893050416),   # A31647
+            (7.92742, -72.51161)                      # A00800
+        ],
+        "color": (255, 255, 255),
+        "altitude": 18000,
+        "type": "star"
     }
 }
 class ui():
@@ -221,7 +239,7 @@ class ui():
         
         
 class Aircraft(pygame.sprite.Sprite):
-    def __init__(self, groups, color, route_name, speed,label, screen, ui):  # Added `label` parameter
+    def __init__(self, groups, color, route_name, speed,label, screen, ui, acft_type):  # Added `label` parameter
         super().__init__(groups)
         self.route_name = route_name
         self.route_type = ROUTES[self.route_name]["type"]
@@ -232,6 +250,7 @@ class Aircraft(pygame.sprite.Sprite):
         self.creation_time = time.time()
         self.start_segment_time = time.time()
         self.speed = speed
+        self.acft_type = acft_type
         self.cumulative_distance_to_last_descent = 0
         self.partial_cumulative_distance_travelled = 0
         self.cumulative_distance_travelled = 0
@@ -277,7 +296,8 @@ class Aircraft(pygame.sprite.Sprite):
         label_lines = [
             f"{self.label}",             # Aircraft identifier
             f"{self.altitude/100:.0f}00 ft",  # Current altitude
-            f"{self.speed} kts",      # Aircraft speed
+            #f"{self.speed} kts",      # Aircraft speed
+            f"{self.acft_type}"
         ]
 
         # Render each line of text
@@ -464,6 +484,51 @@ def pixel_distance_to_nm(pos1, pos2):
                         
                         print(f"Separation: {separation:.2f} nautical miles")
 
+def get_exercise_input(screen, font):
+    input_active = True
+    user_text = ""
+    input_rect = pygame.Rect(200, 300, 250, 50)
+    color_active = (0, 255, 0)
+    color_inactive = (255, 255, 255)
+    color = color_inactive
+
+    while input_active:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if input_rect.collidepoint(event.pos):
+                    input_active = True
+                    color = color_active
+                else:
+                    color = color_inactive
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    try:
+                        exercise_num = int(user_text)
+                        if exercise_num in range(5):
+                            return exercise_num
+                        else:
+                            user_text = "Invalid! Enter 0-4."
+                    except ValueError:
+                        user_text = "Invalid! Enter 0-4."
+                elif event.key == pygame.K_BACKSPACE:
+                    user_text = user_text[:-1]
+                elif event.unicode.isdigit():
+                    user_text += event.unicode
+
+        screen.fill((0, 0, 0))  # Clear screen
+        pygame.draw.rect(screen, color, input_rect, 2)  # Draw input box
+
+        text_surface = font.render(user_text, True, (255, 255, 255))
+        screen.blit(text_surface, (input_rect.x + 10, input_rect.y + 10))  # Display text in the box
+
+        prompt_text = font.render("Enter exercise number (0-4):", True, (255, 255, 255))
+        screen.blit(prompt_text, (200, 250))  # Display prompt text
+
+        pygame.display.flip()  # Update the display
+
 def collision_check(sprite_group, screen):
     """
     Check for potential conflicts between aircraft and visualize separations on the radar.
@@ -487,8 +552,10 @@ def collision_check(sprite_group, screen):
                     pygame.draw.aaline(screen, color, acft1.rect.center, acft2.rect.center, 1)
                     print(f"Separation between {acft1.label} and {acft2.label}: {separation:.2f} NM")
 
+
 class Game:
     def __init__(self):
+        print('ejercicio 0')
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("Radar Simulation")
         self.clock = pygame.time.Clock()
@@ -500,13 +567,67 @@ class Game:
         
         self.ui = ui()
         self.level_str = ""
+        self.exercise_num = 1
         self.Aircraft = Aircraft
-        self.aircraft_timers = [{'name':'UMPEX1A', 'time':0, 'speed':20000, 'label':'AVA1364'},
-                                {'name':'ESNUT2B', 'time':0, 'speed':20000, 'label':'ava1364'},
-                                {'name':'TORAT2A', 'time':0, 'speed':3000, 'label':'AVA1364'},] 
+        #self.exercise_num = input("Enter the exercise number: ")
+        #print(f"Exercise number: {self.exercise_num}")
+        self.aircraft_timers = {
+                                0 : [
+                                    {'name':'UMPEX1A', 'time':0, 'speed':240, 'label':'EFY9070','acft_type':'ATR45'},
+                                    {'name':'DIMIL6A', 'time':120, 'speed':180, 'label':'JEC5678','acft_type':'A320'},
+                                    {'name':'ESNUT2B', 'time':120, 'speed':290, 'label':'AVA9321','acft_type':'A320'},
+                                    {'name':'DIMIL_star', 'time':240, 'speed':250, 'label':'CMP9345','acft_type':'B737'},
+                                    {'name':'ESNUT2A', 'time':420, 'speed':290, 'label':'AVA9571','acft_type':'A320'}
+                                ], 
+                                1 : [
+                                    {'name':'DIMIL_star', 'time':0, 'speed':200, 'label':'JEC5768','acft_type':'A320'},
+                                    {'name':'TORAT2A', 'time':120, 'speed':250, 'label':'AVA9321','acft_type':'A320'},
+                                    {'name':'DIMIL_star', 'time':240, 'speed':180, 'label':'FAC5078','acft_type':'C208'},
+                                    {'name':'TORAT2A', 'time':300, 'speed':290, 'label':'AVA9571','acft_type':'A320'},
+                                    {'name':'UMPEX1A', 'time':360, 'speed':260, 'label':'EFY9070','acft_type':'ATR45'}
+
+                                ],
+                                2 : [
+                                    {'name':'TORAT2A', 'time':0, 'speed':200, 'label':'EFY9070','acft_type':'ATR45'},
+                                    {'name':'UMPEX1A', 'time':0, 'speed':290, 'label':'JEC5678','acft_type':'A320'},
+                                    {'name':'ESNUT2B', 'time':240, 'speed':180, 'label':'HK5020','acft_type':'PA34'},
+                                    {'name':'TORAT2A', 'time':420, 'speed':250, 'label':'CMP9345','acft_type':'B737'},
+                                    {'name':'DIMIL6A', 'time':480, 'speed':290, 'label':'AVA9571','acft_type':'A320'}
+                                ],
+                                3 : [
+                                    {'name':'TORAT2A', 'time':0, 'speed':180, 'label':'PNC2044','acft_type':'SW4'},
+                                    {'name':'ESNUT2A', 'time':0, 'speed':290, 'label':'AVA9321','acft_type':'A320'},
+                                    {'name':'UMPEX1A', 'time':120, 'speed':260, 'label':'EFY9070','acft_type':'ATR45'},
+                                    {'name':'DIMIL_star', 'time':180, 'speed':260, 'label':'CMP9345','acft_type':'B737'},
+                                    {'name':'ESNUT2B', 'time':240, 'speed':180, 'label':'HK5020','acft_type':'PA34'}
+
+                                ],
+                                4 : [
+                                    {'name':'TORAT2A', 'time':0, 'speed':260, 'label':'AVA9321','acft_type':'A320'},
+                                    {'name':'ESNUT2B', 'time':60, 'speed':260, 'label':'JEC5678','acft_type':'A320'},
+                                    {'name':'TORAT2A', 'time':120, 'speed':200, 'label':'EFY9070','acft_type':'ATR45'}, 
+                                    {'name':'DIMIL6A', 'time':180, 'speed':200, 'label':'JEC5470','acft_type':'A320'},
+                                    {'name':'UMPEX1A', 'time':240, 'speed':200, 'label':'PNC2044','acft_type':'SW4'}
+                                ]
+                                }
+
+    def display_time(self):
+    # Calculate elapsed time in minutes and seconds
+        total_seconds = int(self.elapsed_time)
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        
+        # Render the time
+        time_text = self.font.render(f"Time  00 : {minutes} : {seconds:02d} ", True, (0, 255, 0))
+        
+        # Position the text on the screen
+        self.screen.blit(time_text, (10, 10))  # Adjust position as needed
+    
     
     def run(self):
+        start_time = time.time()  # Initialize start time
         while self.running:
+            self.elapsed_time =  time.time() - start_time
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
@@ -523,30 +644,45 @@ class Game:
                         elif event.unicode.isdigit():  # Add digit to input
                             self.ui.string_level += event.unicode
             
-            for acft in self.aircraft_timers[:]:
+            for acft in self.aircraft_timers[self.exercise_num][:]:
                 if self.elapsed_time >= acft['time']:
                     self.Aircraft(self.all_sprites, (0, 100, 0),acft['name'],acft['speed'] ,\
-                                  acft['label'],self.screen,self.ui)
-                    self.aircraft_timers.remove(acft)
+                                  acft['label'],self.screen,self.ui,acft['acft_type'])
+                    self.aircraft_timers[self.exercise_num].remove(acft)
             
             self.screen.fill((0, 0, 0))
+
             for route_name, route_data in ROUTES.items():
+                route_label = self.font.render(f"{route_name} ", True, (0, 255, 0))
+                if route_data["type"] == "star" and route_name != "DIMIL_star":
+                    self.screen.blit(route_label, route_data["pixel_points"][0] )
+                if route_data["type"] == "sid":
+                    self.screen.blit(route_label, route_data["pixel_points"][-1] )
                 for i in range(len(route_data["pixel_points"]) - 1):
                     pygame.draw.aaline(self.screen, route_data["color"], route_data["pixel_points"][i], route_data["pixel_points"][i + 1], 1)
-
+                    
             self.all_sprites.update()
             self.all_sprites.draw(self.screen)
             self.ui.update()
             self.ui.draw()
 
             
-            
+            self.display_time()
             collision_check(self.all_sprites, self.screen)
             pygame.display.update()
 
         pygame.quit()
 
 if __name__ == '__main__':
+    #pygame.init()  # Initialize Pygame
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    font = pygame.font.Font(None, 36)
+
+    # Get exercise input
+    exercise_num = get_exercise_input(screen, font)
+
+    # Pass the exercise number to the Game instance
     radar = Game()
+    radar.exercise_num = exercise_num  # Set exercise number
     radar.run()
 
